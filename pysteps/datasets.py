@@ -39,6 +39,7 @@ from pysteps.utils import conversion
 _precip_events = {
     "fmi": "201609281445",
     "fmi2": "201705091045",
+    "fmi3": "202106231000",
     "mch": "201505151545",
     "mch2": "201607112045",
     "mch3": "201701310945",
