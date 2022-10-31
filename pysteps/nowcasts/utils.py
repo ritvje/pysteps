@@ -241,7 +241,7 @@ def nowcast_main_loop(
     extrapolator = extrapolation.get_method(extrap_method)
 
     x_values, y_values = np.meshgrid(
-        np.arange(precip.shape[1]), np.arange(precip.shape[0])
+        np.arange(precip.shape[-1]), np.arange(precip.shape[-2])
     )
 
     xy_coords = np.stack([x_values, y_values])
@@ -343,14 +343,44 @@ def nowcast_main_loop(
                     if return_output:
                         precip_forecast_out[i].append(precip_forecast_ep[0])
 
+                def worker1_nd(i):
+                    extrap_kwargs_ = extrap_kwargs.copy()
+                    extrap_kwargs_["displacement_prev"] = displacement[i]
+                    extrap_kwargs_["allow_nonfinite_values"] = (
+                        True if np.any(~np.isfinite(precip_forecast_ip[i])) else False
+                    )
+
+                    if velocity_pert_gen is not None:
+                        velocity_ = velocity + velocity_pert_gen[i](t_total)
+                    else:
+                        velocity_ = velocity
+
+                    precip_forecast_ep = np.empty(precip_forecast_ip[i].shape)
+                    for k in range(precip_forecast_ip[i].shape[0]):
+                        precip_forecast_ep[k], displacement[i] = extrapolator(
+                            precip_forecast_ip[i, k],
+                            velocity_,
+                            [t_diff_prev],
+                            **extrap_kwargs_,
+                        )
+                    precip_forecast_out_cur[i] = precip_forecast_ep
+                    if return_output:
+                        precip_forecast_out[i].append(precip_forecast_ep)
+
+                # Select correct function depending on the dimension of input data
+                if precip_forecast_ip.ndim == 3:
+                    worker1_func = worker1
+                elif precip_forecast_ip.ndim == 4:
+                    worker1_func = worker1_nd
+
                 if DASK_IMPORTED and ensemble and num_ensemble_members > 1:
                     res = []
                     for i in range(precip_forecast_ip.shape[0]):
-                        res.append(dask.delayed(worker1)(i))
+                        res.append(dask.delayed(worker1_func)(i))
                     dask.compute(*res, num_workers=num_workers)
                 else:
                     for i in range(precip_forecast_ip.shape[0]):
-                        worker1(i)
+                        worker1_func(i)
 
                 if callback is not None:
                     precip_forecast_out_cur = np.stack(precip_forecast_out_cur)
